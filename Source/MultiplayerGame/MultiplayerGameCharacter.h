@@ -7,6 +7,7 @@
 #include "Logging/LogMacros.h"
 #include "MultiplayerGameCharacter.generated.h"
 
+class IOnlineSession;
 class UInputComponent;
 class USkeletalMeshComponent;
 class UCameraComponent;
@@ -44,6 +45,8 @@ public:
 	USkeletalMeshComponent* GetMesh1P() const { return Mesh1P; }
 	/** Returns FirstPersonCameraComponent subobject **/
 	UCameraComponent* GetFirstPersonCameraComponent() const { return FirstPersonCameraComponent; }
+
+	TSharedPtr<IOnlineSession, ESPMode::ThreadSafe> OnlineSessionInterface;
 	
 protected:
 	virtual void BeginPlay();
@@ -56,7 +59,7 @@ protected:
 
 	virtual void SetupPlayerInputComponent(UInputComponent* InputComponent) override;
 	
-private:
+private: 
 	/** Pawn mesh: 1st person view (arms; seen only by self) */
 	UPROPERTY(VisibleDefaultsOnly, Category=Mesh)
 	USkeletalMeshComponent* Mesh1P;
