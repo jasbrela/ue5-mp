@@ -9,7 +9,9 @@
 #include "InputActionValue.h"
 #include "OnlineSubsystem.h"
 #include "OnlineSessionSettings.h"
+#include "Online/OnlineSessionNames.h"
 #include "Engine/LocalPlayer.h"
+#include "DebugMacros.h"
 
 DEFINE_LOG_CATEGORY(LogTemplateCharacter);
 
@@ -17,7 +19,8 @@ DEFINE_LOG_CATEGORY(LogTemplateCharacter);
 // AMultiplayerGameCharacter
 
 AMultiplayerGameCharacter::AMultiplayerGameCharacter():
-	CreateSessionCompleteDelegate(FOnCreateSessionCompleteDelegate::CreateUObject(this, &ThisClass::OnCreateSessionComplete))
+	CreateSessionCompleteDelegate(FOnCreateSessionCompleteDelegate::CreateUObject(this, &ThisClass::OnCreateSessionComplete)),
+	FindSessionsCompleteDelegate(FOnFindSessionsCompleteDelegate::CreateUObject(this, &ThisClass::OnFindSessionsComplete))
 {
 	// Character doesnt have a rifle at start
 	bHasRifle = false;
@@ -43,11 +46,8 @@ AMultiplayerGameCharacter::AMultiplayerGameCharacter():
 	if (const IOnlineSubsystem* OnlineSubsystem = IOnlineSubsystem::Get())
 	{
 		OnlineSessionInterface = OnlineSubsystem->GetSessionInterface();
-		if (GEngine)
-		{
-			GEngine->AddOnScreenDebugMessage(-1, 15.f, FColor::White,
-				FString::Printf(TEXT("Found Subsystem %s"), *OnlineSubsystem->GetSubsystemName().ToString()));
-		}
+
+		LOG("Found Subsystem %s", *OnlineSubsystem->GetSubsystemName().ToString());
 	}
 }
 
@@ -64,7 +64,6 @@ void AMultiplayerGameCharacter::BeginPlay()
 			Subsystem->AddMappingContext(DefaultMappingContext, 0);
 		}
 	}
-
 }
 
 //////////////////////////////////////////////////////////////////////////// Input
@@ -104,8 +103,8 @@ void AMultiplayerGameCharacter::CreateGameSession()
 	OnlineSessionInterface->AddOnCreateSessionCompleteDelegate_Handle(CreateSessionCompleteDelegate);
 	
 	TSharedPtr<FOnlineSessionSettings> SessionSettings = MakeShareable(new FOnlineSessionSettings());
-	SessionSettings->NumPublicConnections = 4;
 	SessionSettings->bIsLANMatch = false;
+	SessionSettings->NumPublicConnections = 4;
 	SessionSettings->bAllowJoinInProgress = true;
 	SessionSettings->bAllowJoinViaPresence = true;
 	SessionSettings->bShouldAdvertise = true;
@@ -119,16 +118,48 @@ void AMultiplayerGameCharacter::OnCreateSessionComplete(FName SessionName, bool 
 {
 	if (bWasSuccessful)
 	{
-		if (GEngine)
-		{
-			GEngine->AddOnScreenDebugMessage(-1, 15.f, FColor::Green, FString::Printf(TEXT("Created Session: %s"), *SessionName.ToString()));
-		}
+		LOG_SUCCESS("Created Session: %s", *SessionName.ToString());
 	} else
 	{
-		if (GEngine)
-		{
-			GEngine->AddOnScreenDebugMessage(-1, 15.f, FColor::Red, FString::Printf(TEXT("Failed to create session.")));
-		}
+		LOG_ERROR("Failed to create session.");
+	}
+}
+
+
+void AMultiplayerGameCharacter::JoinGameSession()
+{
+	if (!OnlineSessionInterface.IsValid()) return;
+
+	OnlineSessionInterface->AddOnFindSessionsCompleteDelegate_Handle(FindSessionsCompleteDelegate);
+
+	LOG("Searching for sessions...")
+	
+	SessionSearch = MakeShareable(new FOnlineSessionSearch());
+	SessionSearch->MaxSearchResults = 10000;
+	SessionSearch->bIsLanQuery = false;
+	SessionSearch->QuerySettings.Set(SEARCH_PRESENCE, true, EOnlineComparisonOp::Equals);
+	
+	const ULocalPlayer* LocalPlayer = GetWorld()->GetFirstLocalPlayerFromController();
+
+	OnlineSessionInterface->FindSessions(*LocalPlayer->GetPreferredUniqueNetId(), SessionSearch.ToSharedRef());
+}
+
+void AMultiplayerGameCharacter::OnFindSessionsComplete(bool bWasSuccessful)
+{
+	if (bWasSuccessful)
+	{
+		LOG_SUCCESS("Find Sessions completed with success. (%i)", SessionSearch->SearchResults.Num());
+	} else
+	{
+		LOG_ERROR("Find Sessions failed.");
+	}
+	
+	for (FOnlineSessionSearchResult Result : SessionSearch->SearchResults)
+	{
+		FString Id = Result.Session.GetSessionIdStr();
+		FString User = Result.Session.OwningUserName;
+
+		LOG("Id: %s User: %s", *Id, *User);
 	}
 }
 

@@ -64,11 +64,18 @@ protected:
 	UFUNCTION(BlueprintCallable)
 	void CreateGameSession();
 
+	UFUNCTION(BlueprintCallable)
+	void JoinGameSession();
+
 	void OnCreateSessionComplete(FName SessionName, bool bWasSuccessful);
+	void OnFindSessionsComplete(bool bWasSuccessful);
 	
 private:
 
 	FOnCreateSessionCompleteDelegate CreateSessionCompleteDelegate;
+	FOnFindSessionsCompleteDelegate FindSessionsCompleteDelegate;
+
+	TSharedPtr<FOnlineSessionSearch> SessionSearch;
 		
 	/** Pawn mesh: 1st person view (arms; seen only by self) */
 	UPROPERTY(VisibleDefaultsOnly, Category=Mesh)
