@@ -12,6 +12,7 @@
 #include "Online/OnlineSessionNames.h"
 #include "Engine/LocalPlayer.h"
 #include "DebugMacros.h"
+#include "GameFramework/PlayerController.h"
 
 DEFINE_LOG_CATEGORY(LogTemplateCharacter);
 
@@ -20,7 +21,8 @@ DEFINE_LOG_CATEGORY(LogTemplateCharacter);
 
 AMultiplayerGameCharacter::AMultiplayerGameCharacter():
 	CreateSessionCompleteDelegate(FOnCreateSessionCompleteDelegate::CreateUObject(this, &ThisClass::OnCreateSessionComplete)),
-	FindSessionsCompleteDelegate(FOnFindSessionsCompleteDelegate::CreateUObject(this, &ThisClass::OnFindSessionsComplete))
+	FindSessionsCompleteDelegate(FOnFindSessionsCompleteDelegate::CreateUObject(this, &ThisClass::OnFindSessionsComplete)),
+	JoinSessionCompleteDelegate(FOnJoinSessionCompleteDelegate::CreateUObject(this, &ThisClass::OnJoinSessionComplete))
 {
 	// Character doesnt have a rifle at start
 	bHasRifle = false;
@@ -110,6 +112,7 @@ void AMultiplayerGameCharacter::CreateGameSession()
 	SessionSettings->bShouldAdvertise = true;
 	SessionSettings->bUsesPresence = true;
 	SessionSettings->bUseLobbiesIfAvailable = true;
+	SessionSettings->Set(FName("MatchType"), FString("FreeForAll"), EOnlineDataAdvertisementType::ViaOnlineServiceAndPing);
 	const ULocalPlayer* LocalPlayer = GetWorld()->GetFirstLocalPlayerFromController();
 	OnlineSessionInterface->CreateSession(*LocalPlayer->GetPreferredUniqueNetId(), NAME_GameSession, *SessionSettings);
 }
@@ -122,6 +125,12 @@ void AMultiplayerGameCharacter::OnCreateSessionComplete(FName SessionName, bool 
 	} else
 	{
 		LOG_ERROR("Failed to create session.");
+	}
+
+	UWorld* World = GetWorld();
+	if (World)
+	{
+		World->ServerTravel(FString("/Game/Levels/Lobby?listen"));
 	}
 }
 
@@ -146,6 +155,8 @@ void AMultiplayerGameCharacter::JoinGameSession()
 
 void AMultiplayerGameCharacter::OnFindSessionsComplete(bool bWasSuccessful)
 {
+	if (!OnlineSessionInterface.IsValid()) return;
+	
 	if (bWasSuccessful)
 	{
 		LOG_SUCCESS("Find Sessions completed with success. (%i)", SessionSearch->SearchResults.Num());
@@ -153,13 +164,41 @@ void AMultiplayerGameCharacter::OnFindSessionsComplete(bool bWasSuccessful)
 	{
 		LOG_ERROR("Find Sessions failed.");
 	}
-	
+
 	for (FOnlineSessionSearchResult Result : SessionSearch->SearchResults)
 	{
+		FString MatchType;
+		Result.Session.SessionSettings.Get(FName("MatchType"), MatchType);
 		FString Id = Result.Session.GetSessionIdStr();
 		FString User = Result.Session.OwningUserName;
 
-		LOG("Id: %s User: %s", *Id, *User);
+		LOG("Id: %s User: %s MatchType: %s", *Id, *User, *MatchType);
+
+		if (MatchType == FString("FreeForAll"))
+		{
+			OnlineSessionInterface->AddOnJoinSessionCompleteDelegate_Handle(JoinSessionCompleteDelegate);
+			const ULocalPlayer* LocalPlayer = GetWorld()->GetFirstLocalPlayerFromController();
+
+			OnlineSessionInterface->JoinSession(*LocalPlayer->GetPreferredUniqueNetId(), NAME_GameSession, Result);
+		}
+	}
+}
+
+void AMultiplayerGameCharacter::OnJoinSessionComplete(FName SessionName, EOnJoinSessionCompleteResult::Type Result)
+{
+	if (!OnlineSessionInterface.IsValid()) return;
+
+	FString Address;
+	if (OnlineSessionInterface->GetResolvedConnectString(NAME_GameSession, Address))
+	{
+		LOG("Connecting to %s", *Address);
+
+		APlayerController* PlayerController = GetGameInstance()->GetFirstLocalPlayerController();
+		if (PlayerController)
+		{
+			PlayerController->ClientTravel(Address, TRAVEL_Absolute);
+		}
+		
 	}
 }
 
